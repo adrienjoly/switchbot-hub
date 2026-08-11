@@ -157,6 +157,7 @@ function printTable(readings) {
     console.error('No temperature-capable devices found on this account.');
     return;
   }
+  console.log(new Date());
   const rows = readings.map((r) => r.error ? { name: r.name, error: r.error } : {
     name: r.name,
     temperature: `${r.temperature.toFixed(1)} °C`,
