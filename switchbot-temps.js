@@ -130,7 +130,6 @@ async function getTemperatures(token, secret) {
     try {
       const status = await apiGet(`/devices/${device.deviceId}/status`, token, secret);
       if (typeof status.temperature !== 'number') return null;
-      console.log({device, status});
       return {
         name: device.deviceName,
         deviceId: device.deviceId,
