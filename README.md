@@ -2,7 +2,7 @@ Scripts to play with my SwitchBot temperature sensors + mini hub.
 
 After setting your secret API credentials in the `.env` file, you can run these commands (tested on MacOS):
 
-```
+```sh
 # 1. print sensor values
 $ node --env-file=.env switchbot-temps.js
 
@@ -16,7 +16,7 @@ $ node --env-file=.env switchbot-temps.js
   └─────────┴────────────────┴─────────────┴──────────┴─────────┴───────────┘
 
 # 2. watch + warn vocally whenever a temperature has changed since last reading
-node --env-file=.env switchbot-temps.js --watch
+$ node --env-file=.env switchbot-temps.js --watch
 
   🗣️ la température de Moniteur CO2 a augmenté de 0.1 degrés
 ```
