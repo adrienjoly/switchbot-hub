@@ -16,6 +16,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 
 const BASE_URL = 'https://api.switch-bot.com/v1.1';
 
@@ -166,6 +167,75 @@ function printTable(readings) {
   console.table(rows);
 }
 
+function buildTemperatureChangeSentence(roomName, previousTemperature, currentTemperature) {
+  const diff = currentTemperature - previousTemperature;
+  if (diff === 0) return null;
+
+  const diffDegrees = Math.abs(diff).toFixed(1);
+  const hasIncreased = diff > 0;
+  return `la température de ${roomName} a ${hasIncreased ? 'augmenté' : 'baissé'} de ${diffDegrees} degrés`;
+}
+
+async function speakSentence(sentence) {
+  return new Promise((resolve) => {
+    const child = spawn('say', [sentence], { stdio: 'ignore' });
+    child.once('error', () => resolve());
+    child.once('close', () => resolve());
+  });
+}
+
+function getReadingsByName(readings) {
+  return new Map(
+    readings
+      .filter((reading) => typeof reading.temperature === 'number')
+      .map((reading) => [reading.name, reading]),
+  );
+}
+
+async function watchTemperatures(token, secret, options = {}) {
+  const { json = false } = options;
+  const intervalMs = 5 * 60 * 1000;
+  let previousReadings = new Map();
+
+  const runCycle = async () => {
+    try {
+      const readings = await getTemperatures(token, secret);
+
+      if (json) {
+        console.log(JSON.stringify({ readings }, null, 2));
+      } else {
+        printTable(readings);
+      }
+
+      const currentReadings = getReadingsByName(readings);
+      for (const [roomName, currentReading] of currentReadings.entries()) {
+        const previousReading = previousReadings.get(roomName);
+        if (!previousReading || typeof previousReading.temperature !== 'number') continue;
+
+        const sentence = buildTemperatureChangeSentence(
+          roomName,
+          previousReading.temperature,
+          currentReading.temperature,
+        );
+        if (!sentence) continue;
+
+        console.log(sentence);
+        await speakSentence(sentence);
+      }
+
+      previousReadings = currentReadings;
+    } catch (err) {
+      console.error(err.message);
+    }
+
+    setTimeout(() => {
+      runCycle().catch((err) => console.error(err.message));
+    }, intervalMs);
+  };
+
+  await runCycle();
+}
+
 async function main() {
   loadEnv();
 
@@ -176,16 +246,33 @@ async function main() {
     process.exit(1);
   }
 
+  const watchMode = process.argv.includes('--watch');
+  const jsonMode = process.argv.includes('--json');
+
+  if (watchMode) {
+    console.log('Watching temperatures every 5 minutes...');
+    await watchTemperatures(token, secret, { json: jsonMode });
+    return;
+  }
+
   const readings = await getTemperatures(token, secret);
 
-  if (process.argv.includes('--json')) {
+  if (jsonMode) {
     console.log(JSON.stringify({ readings }, null, 2));
   } else {
     printTable(readings);
   }
 }
 
-main().catch((err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildTemperatureChangeSentence,
+  getReadingsByName,
+  speakSentence,
+};
