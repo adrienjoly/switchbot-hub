@@ -120,6 +120,9 @@ async function pool(items, limit, worker) {
 }
 
 async function getTemperatures(token, secret) {
+  // Fetch outside temperature from Open-Meteo API, for my neighborhood
+  const outsideTempRequest = fetch("https://api.open-meteo.com/v1/forecast?latitude=48.858&longitude=2.442&current=temperature_2m&timezone=Europe%2FParis");
+
   const { deviceList = [] } = await apiGet('/devices', token, secret);
 
   let candidates = deviceList.filter((d) => TEMP_DEVICE_TYPES.has(d.deviceType));
@@ -145,7 +148,13 @@ async function getTemperatures(token, secret) {
     }
   });
 
-  return readings.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  return [
+    {
+      name: "Extérieur",
+      temperature: (await (await outsideTempRequest).json()).current.temperature_2m
+    },
+    ...readings.filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -161,9 +170,9 @@ function printTable(readings) {
   const rows = readings.map((r) => r.error ? { name: r.name, error: r.error } : {
     name: r.name,
     temperature: `${r.temperature.toFixed(1)} °C`,
-    humidity: r.humidity !== null ? `${String(r.humidity)} %` : undefined,
-    battery: r.battery !== null ? `~${r.battery} %` : undefined,
-    co2: r.co2 !== null ? `${r.co2} ppm` : undefined,
+    humidity: r.humidity ? `${String(r.humidity)} %` : undefined,
+    battery: r.battery ? `~${r.battery} %` : undefined,
+    co2: r.co2 ? `${r.co2} ppm` : undefined,
   });
   console.table(rows);
 }
