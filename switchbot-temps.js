@@ -121,7 +121,9 @@ async function pool(items, limit, worker) {
 
 async function getTemperatures(token, secret) {
   // Fetch outside temperature from Open-Meteo API, for my neighborhood
-  const outsideTempRequest = fetch("https://api.open-meteo.com/v1/forecast?latitude=48.858&longitude=2.442&current=temperature_2m&timezone=Europe%2FParis");
+  const latitude = 48.8542;
+  const longitude = 2.4405;
+  const outsideTempRequest = fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m&timezone=Europe%2FParis`);
 
   const { deviceList = [] } = await apiGet('/devices', token, secret);
 
