@@ -23,6 +23,8 @@ $ node --env-file=.env switchbot-temps.js --watch
 
 ## Web dashboard (GitHub Pages + Cloudflare Worker)
 
+<img width="766" height="807" alt="image" src="https://github.com/user-attachments/assets/0de9f05b-4fb1-424e-9571-7418823a9025" />
+
 `index.html` is the phone-friendly dashboard. It fetches readings from a Cloudflare
 Worker, so the SwitchBot API token and secret never reach GitHub Pages or the browser.
 
