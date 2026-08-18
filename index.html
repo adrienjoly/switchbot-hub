@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f1e7">
+    <title>Temperatures</title>
+    <style>
+      :root { color-scheme: light; --ink: #1f2925; --paper: #f6f1e7; --panel: #fffdf8; --line: #d9d2c4; --muted: #68736e; --accent: #bb4d32; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-width: 320px; background: var(--paper); color: var(--ink); font-family: Georgia, "Times New Roman", serif; }
+      main { width: min(100%, 760px); margin: 0 auto; padding: 20px 16px 32px; }
+      header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+      h1 { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: 0; }
+      #updated { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: right; }
+      .chart-section { height: 48svh; min-height: 300px; display: grid; grid-template-rows: 1fr auto; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+      canvas { width: 100%; height: 100%; min-height: 0; }
+      #legend { display: flex; flex-wrap: wrap; gap: 7px 14px; padding: 8px 4px 0; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .legend-item { display: flex; align-items: center; gap: 6px; }
+      .swatch { width: 16px; height: 3px; flex: none; }
+      .section-title { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 8px; }
+      h2 { margin: 0; font-size: 17px; font-weight: 600; }
+      button { appearance: none; border: 1px solid var(--line); border-radius: 5px; padding: 7px 10px; background: var(--panel); color: var(--ink); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      button:active { background: #e7dfd0; }
+      #message { min-height: 20px; margin: 0 0 8px; color: var(--muted); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+      #message.error { color: #9a2f20; }
+      table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 15px; }
+      th, td { padding: 10px; border-bottom: 1px solid var(--line); text-align: left; }
+      tr:last-child td { border-bottom: 0; }
+      th { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: uppercase; }
+      td:not(:first-child), th:not(:first-child) { text-align: right; }
+      @media (max-height: 650px) { .chart-section { height: 44svh; min-height: 250px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Temperatures</h1>
+        <div id="updated">En attente</div>
+      </header>
+      <section class="chart-section" aria-label="Evolution des temperatures sur 24 heures">
+        <canvas id="chart" aria-label="Graphique des temperatures" role="img"></canvas>
+        <div id="legend" aria-label="Legende"></div>
+      </section>
+      <div class="section-title">
+        <h2>Mesures actuelles</h2>
+      </div>
+      <p id="message">Chargement des mesures...</p>
+      <table>
+        <thead><tr><th>Capteur</th><th>Temperature</th><th>Humidite</th><th>Batterie</th></tr></thead>
+        <tbody id="readings"></tbody>
+      </table>
+    </main>
+    <script>
+      'use strict';
+
+      // Replace this with the URL printed by `npx wrangler deploy`, including /readings.
+      const WORKER_URL = 'https://switchbot-temperatures.YOUR-SUBDOMAIN.workers.dev/readings';
+      const POLL_INTERVAL_MS = 5 * 60 * 1000;
+      const HISTORY_MS = 24 * 60 * 60 * 1000;
+      const COLORS = ['#bb4d32', '#247b7b', '#c58b1a', '#635a9d', '#4e8b52', '#9a4774', '#63708d'];
+      const historyKey = 'switchbot-temperature-history';
+
+      function setMessage(text, isError = false) {
+        const message = document.querySelector('#message');
+        message.textContent = text;
+        message.classList.toggle('error', isError);
+      }
+
+      async function getReadings() {
+        if (WORKER_URL.includes('YOUR-SUBDOMAIN')) throw new Error('Configurez WORKER_URL avec l URL de votre Worker Cloudflare.');
+        const response = await fetch(WORKER_URL);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Worker: HTTP ${response.status}`);
+        return payload.readings;
+      }
+
+      function renderTable(readings) {
+        const body = document.querySelector('#readings');
+        body.replaceChildren(...readings.map((reading) => {
+          const row = document.createElement('tr');
+          const values = reading.error ? [reading.name, reading.error, '', ''] : [reading.name, `${reading.temperature.toFixed(1)} C`, reading.humidity == null ? '-' : `${reading.humidity} %`, reading.battery == null ? '-' : `${reading.battery} %`];
+          for (const value of values) { const cell = document.createElement('td'); cell.textContent = value; row.append(cell); }
+          return row;
+        }));
+      }
+
+      function loadHistory() {
+        try { return JSON.parse(localStorage.getItem(historyKey)) || []; } catch { return []; }
+      }
+
+      function storeHistory(readings) {
+        const now = Date.now();
+        const history = loadHistory().filter((sample) => sample.time > now - HISTORY_MS);
+        history.push({ time: now, values: Object.fromEntries(readings.filter((reading) => typeof reading.temperature === 'number').map((reading) => [reading.name, reading.temperature])) });
+        localStorage.setItem(historyKey, JSON.stringify(history));
+        return history;
+      }
+
+      function drawChart(history) {
+        const canvas = document.querySelector('#chart');
+        const rect = canvas.getBoundingClientRect();
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.round(rect.width * ratio); canvas.height = Math.round(rect.height * ratio);
+        const context = canvas.getContext('2d'); context.scale(ratio, ratio);
+        const width = rect.width; const height = rect.height; const padding = { top: 18, right: 12, bottom: 24, left: 38 };
+        context.clearRect(0, 0, width, height);
+        const series = [...new Set(history.flatMap((sample) => Object.keys(sample.values)))];
+        const legend = document.querySelector('#legend');
+        legend.replaceChildren(...series.map((name, index) => { const item = document.createElement('span'); item.className = 'legend-item'; item.innerHTML = `<span class="swatch" style="background:${COLORS[index % COLORS.length]}"></span>`; item.append(document.createTextNode(name)); return item; }));
+        const values = history.flatMap((sample) => Object.values(sample.values));
+        if (!values.length) return;
+        const minimum = Math.floor((Math.min(...values) - 0.5) * 2) / 2;
+        const maximum = Math.ceil((Math.max(...values) + 0.5) * 2) / 2;
+        const range = Math.max(maximum - minimum, 1);
+        const start = Math.max(history[0].time, Date.now() - HISTORY_MS); const end = Date.now();
+        const x = (time) => padding.left + ((time - start) / (end - start)) * (width - padding.left - padding.right);
+        const y = (value) => padding.top + (1 - (value - minimum) / range) * (height - padding.top - padding.bottom);
+        context.font = '11px ui-monospace, monospace'; context.fillStyle = '#68736e'; context.strokeStyle = '#d9d2c4'; context.lineWidth = 1;
+        for (let value = minimum; value <= maximum; value += 0.5) { const position = y(value); context.beginPath(); context.moveTo(padding.left, position); context.lineTo(width - padding.right, position); context.stroke(); context.fillText(`${value.toFixed(1)} C`, 1, position + 4); }
+        context.fillText('24 h', padding.left, height - 6); context.fillText('maintenant', width - padding.right - 60, height - 6);
+        series.forEach((name, index) => { context.beginPath(); let hasPoint = false; history.forEach((sample) => { if (sample.values[name] == null) return; const pointX = x(sample.time); const pointY = y(sample.values[name]); if (hasPoint) context.lineTo(pointX, pointY); else { context.moveTo(pointX, pointY); hasPoint = true; } }); context.strokeStyle = COLORS[index % COLORS.length]; context.lineWidth = 2.5; context.stroke(); });
+      }
+
+      async function refresh() {
+        setMessage('Mise a jour...');
+        try {
+          const readings = await getReadings();
+          renderTable(readings); drawChart(storeHistory(readings));
+          document.querySelector('#updated').textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+          setMessage('Mise a jour toutes les 5 minutes.');
+        } catch (error) {
+          setMessage(error.message, true);
+        }
+      }
+
+      window.addEventListener('resize', () => drawChart(loadHistory()));
+      refresh();
+      window.setInterval(refresh, POLL_INTERVAL_MS);
+    </script>
+  </body>
+</html>

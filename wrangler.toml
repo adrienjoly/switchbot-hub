@@ -1,0 +1,7 @@
+name = "switchbot-temperatures"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "https://adrienjoly.com"
