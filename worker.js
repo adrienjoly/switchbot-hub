@@ -24,6 +24,11 @@ function responseJson(body, status, headers) {
   });
 }
 
+function isAuthorized(request, env) {
+  return Boolean(env.WORKER_ACCESS_SECRET)
+    && request.headers.get('X-Worker-Secret') === env.WORKER_ACCESS_SECRET;
+}
+
 async function authHeaders(token, secret) {
   const timestamp = String(Date.now());
   const nonce = crypto.randomUUID();
@@ -92,13 +97,16 @@ export default {
         headers: {
           ...headers,
           'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Allow-Headers': 'Content-Type, X-Worker-Secret',
           'Access-Control-Max-Age': '86400',
         },
       });
     }
     if (new URL(request.url).pathname !== '/readings' || request.method !== 'GET') {
       return responseJson({ error: 'Not found' }, 404, headers);
+    }
+    if (!isAuthorized(request, env)) {
+      return responseJson({ error: 'Unauthorized' }, 401, headers);
     }
     if (!env.SWITCHBOT_API_TOKEN || !env.SWITCHBOT_API_SECRET) {
       return responseJson({ error: 'Worker secrets are not configured' }, 500, headers);

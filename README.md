@@ -45,13 +45,19 @@ Worker, so the SwitchBot API token and secret never reach GitHub Pages or the br
   ```sh
   npx wrangler secret put SWITCHBOT_API_TOKEN
   npx wrangler secret put SWITCHBOT_API_SECRET
+  npx wrangler secret put WORKER_ACCESS_SECRET
   ```
 
-4. Deploy again, then copy the printed `https://...workers.dev` URL into `WORKER_URL`
-  in `index.html`, adding `/readings` at the end. Publish `index.html` with GitHub
-  Pages. The dashboard polls the Worker every five minutes and saves only readings
-  history in the browser's local storage.
+  Generate a long random value for `WORKER_ACCESS_SECRET` (for example,
+  `openssl rand -base64 32`).
 
-The Worker endpoint is CORS-limited to the Pages origin. This protects the credentials,
-but not the returned temperatures from someone who knows the Worker URL; do not treat it
-as an access-controlled private API.
+4. Deploy again and open the published GitHub Pages site. On first use, it prompts for
+  the Worker URL (adding `/readings`) and `WORKER_ACCESS_SECRET`, then stores both in
+  that browser's local storage. Use the Configuration button to change either value.
+  The dashboard polls every five minutes and saves readings history locally.
+
+The Worker endpoint is CORS-limited to the Pages origin and refuses requests without the
+access secret before contacting SwitchBot. The Worker URL alone therefore cannot reveal
+temperatures or consume SwitchBot API calls. Anyone with the access secret can still use
+it, so keep it private and replace it with `wrangler secret put WORKER_ACCESS_SECRET` if
+it is exposed.

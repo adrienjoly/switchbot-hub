@@ -44,6 +44,7 @@
       </section>
       <div class="section-title">
         <h2>Mesures actuelles</h2>
+        <button id="settings" type="button">Configuration</button>
       </div>
       <p id="message">Chargement des mesures...</p>
       <table>
@@ -54,12 +55,27 @@
     <script>
       'use strict';
 
-      // Replace this with the URL printed by `npx wrangler deploy`, including /readings.
-      const WORKER_URL = 'https://switchbot-temperatures.YOUR-SUBDOMAIN.workers.dev/readings';
       const POLL_INTERVAL_MS = 5 * 60 * 1000;
       const HISTORY_MS = 24 * 60 * 60 * 1000;
       const COLORS = ['#bb4d32', '#247b7b', '#c58b1a', '#635a9d', '#4e8b52', '#9a4774', '#63708d'];
       const historyKey = 'switchbot-temperature-history';
+      const workerCredentialsKey = 'switchbot-temperature-worker-credentials';
+
+      function getWorkerCredentials() {
+        try { return JSON.parse(localStorage.getItem(workerCredentialsKey)); } catch { return null; }
+      }
+
+      function askWorkerCredentials() {
+        const current = getWorkerCredentials();
+        const url = prompt('Entrez l URL de votre Worker Cloudflare, avec /readings :', current?.url || '');
+        if (url === null) return null;
+        const secret = prompt('Entrez le secret d acces du Worker :', current?.secret || '');
+        if (secret === null) return null;
+        if (!url.trim() || !secret.trim()) { setMessage('L URL et le secret sont necessaires.', true); return null; }
+        const credentials = { url: url.trim(), secret: secret.trim() };
+        localStorage.setItem(workerCredentialsKey, JSON.stringify(credentials));
+        return credentials;
+      }
 
       function setMessage(text, isError = false) {
         const message = document.querySelector('#message');
@@ -67,9 +83,8 @@
         message.classList.toggle('error', isError);
       }
 
-      async function getReadings() {
-        if (WORKER_URL.includes('YOUR-SUBDOMAIN')) throw new Error('Configurez WORKER_URL avec l URL de votre Worker Cloudflare.');
-        const response = await fetch(WORKER_URL);
+      async function getReadings(credentials) {
+        const response = await fetch(credentials.url, { headers: { 'X-Worker-Secret': credentials.secret } });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || `Worker: HTTP ${response.status}`);
         return payload.readings;
@@ -123,9 +138,11 @@
       }
 
       async function refresh() {
+        const credentials = getWorkerCredentials() || askWorkerCredentials();
+        if (!credentials) { setMessage('Configuration du Worker requise.', true); return; }
         setMessage('Mise a jour...');
         try {
-          const readings = await getReadings();
+          const readings = await getReadings(credentials);
           renderTable(readings); drawChart(storeHistory(readings));
           document.querySelector('#updated').textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
           setMessage('Mise a jour toutes les 5 minutes.');
@@ -134,6 +151,7 @@
         }
       }
 
+      document.querySelector('#settings').addEventListener('click', () => { if (askWorkerCredentials()) refresh(); });
       window.addEventListener('resize', () => drawChart(loadHistory()));
       refresh();
       window.setInterval(refresh, POLL_INTERVAL_MS);
